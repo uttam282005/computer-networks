@@ -66,6 +66,7 @@ int main(int argc, char* argv[]) {
 
     close(newsocket_fd);
     close(server_fd);
-    fclose()
+    fclose(f);
+
     return 0;
 }
