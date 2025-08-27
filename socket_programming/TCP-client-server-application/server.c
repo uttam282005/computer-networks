@@ -10,12 +10,8 @@ void error(const char *msg) {
     exit(1);
 }
 
-int main(int argc, char* argv[]) {
-    if (argc < 2) {
-        error("Need port number.");
-    }
-
-    int server_fd, portno, newsocket_fd;
+int main() {
+    int server_fd, newsocket_fd;
     enum Status status;
 
     server_fd = socket(AF_INET, SOCK_STREAM, 0);
@@ -24,19 +20,17 @@ int main(int argc, char* argv[]) {
         error("Socket creation failed.");
     }
 
-    portno = atoi(argv[1]);
-
     struct sockaddr_in server_addr, client_addr;
 
     server_addr.sin_family = AF_INET;
-    server_addr.sin_port = htons(portno);
+    server_addr.sin_port = htons(PORT_NO);
     server_addr.sin_addr.s_addr = htonl(INADDR_ANY);
 
     if ((status = bind(server_fd, (struct sockaddr *) &server_addr, sizeof(server_addr))) == FAILURE) {
         error("Port binding fails...");
     }
 
-    listen(server_fd, 5);
+    listen(server_fd, SERVER_BACKLOG);
     printf("Listening for connections...\n");
     socklen_t clientlen = sizeof(client_addr);
 
