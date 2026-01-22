@@ -5,7 +5,7 @@ different network perspectives-
 - application developer ->  a guarantee that each message the application sends will be delivered without error within a certain amount of time or the ability to switch gracefully among different connections to the network as the user moves around.
 - network manager -> easy to maintain, expand (modular)
 
-# scalability connectivity
+# scalable connectivity
 - A system that is designed to support growth to an arbitrarily large size is said to scale
 
 at the lowest level, connectivity can be physical 
