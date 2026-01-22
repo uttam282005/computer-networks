@@ -42,7 +42,9 @@ the complete packet to the next node.
 > the process of finding a path to forward data from src to destination node is called routing.
 
 > unicast: a node wants to send data to a single node.
+
 > broadcast: a node wants to send data to all the nodes in the network.
+
 > multicast: sending data to a subset of nodes.
 
 
