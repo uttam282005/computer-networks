@@ -36,7 +36,7 @@ store and forward strategy -
 each node receives the complete packet and store it in it's memory and then forwards 
 the complete packet to the next node.
 
-> packet switches are prefered in computer networks due to performance and efficiency reason.
+*packet switches are prefered in computer networks due to performance and efficiency reason.*
 
 - every node has a unique address in a network.
 > the process of finding a path to forward data from src to destination node is called routing.
