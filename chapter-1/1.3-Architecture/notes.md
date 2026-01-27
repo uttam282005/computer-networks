@@ -55,22 +55,28 @@ for example.
 > data travels in form of raw bits
 - data link layer
 > bits aggregated to form something called frames
+
 > implemented by device drivers on the local device
 - network layer
 > frames aggregated into packets
+
 > handles routing among nodes
 - transport layer
 > TCP/UDP
+
 > unit of data exchaged is called a message
+
 > process to process channels
 
 - application layer
 > HTTP/HTTPS, websockes etc.
 - presentation layer
 > handles data format like whether an integer is 16, 32 or 64 bit
+
 > whether the msb in received first
 - session layer
 > provides a namespace
+
 > used to tie together different transport streams like audio and video streams
 
 ![OSI model](https://book.systemsapproach.org/_images/f01-13-9780123850591.png)
