@@ -1,66 +1,115 @@
 #include "server.h"
-
-enum Status {
-    SUCCESS = 0,
-    FAILURE = -1,
-};
+#include <arpa/inet.h>
+#include <netdb.h>
+#include <netinet/in.h>
+#include <signal.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <sys/socket.h>
+#include <sys/wait.h>
+#include <unistd.h>
 
 void error(const char *msg) {
-    perror(msg);
-    exit(1);
+  perror(msg);
+  exit(1);
+}
+
+void *get_client_addr(struct sockaddr *s) {
+  if (s->sa_family == AF_INET) {
+    return &((struct sockaddr_in *)s)->sin_addr;
+  }
+
+  return &((struct sockaddr_in6 *)s)->sin6_addr;
+}
+
+void signchild_handler(int s) {
+  (void)s;
+
+  int saved_errno = errno;
+
+  while (waitpid(-1, NULL, WNOHANG) > 0)
+    ;
+
+  errno = saved_errno;
 }
 
 int main() {
-    int server_fd, newsocket_fd;
-    enum Status status;
+  int yes = 1;
+  int sock_fd, newsock_fd, rv;
+  char client_ip[INET6_ADDRSTRLEN];
+  struct addrinfo *res, hints, *p;
+  struct sockaddr client_info;
+  struct sigaction sa;
 
-    server_fd = socket(AF_INET, SOCK_STREAM, 0);
+  hints.ai_family = AF_UNSPEC;
+  hints.ai_flags = AI_PASSIVE;
 
-    if (server_fd < 0) {
-        error("Socket creation failed.");
+  if ((rv = getaddrinfo(NULL, PORT, &hints, &res)) != 0) {
+    fprintf(stderr, "getaddrinfo: %s\n", gai_strerror(rv));
+  }
+
+  for (p = res; p != NULL; p = p->ai_next) {
+    if ((sock_fd = socket(p->ai_family, p->ai_socktype, p->ai_protocol)) != 0) {
+      fprintf(stderr, "socket: socket creation failed\n");
+      continue;
+    }
+    if (setsockopt(sock_fd, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(int)) ==
+        -1) {
+      perror("setsockopt");
+      exit(1);
     }
 
-    struct sockaddr_in server_addr, client_addr;
-
-    server_addr.sin_family = AF_INET;
-    server_addr.sin_port = htons(PORT_NO);
-    server_addr.sin_addr.s_addr = htonl(INADDR_ANY);
-
-    if ((status = bind(server_fd, (struct sockaddr *) &server_addr, sizeof(server_addr))) == FAILURE) {
-        error("Port binding fails...");
+    if (bind(sock_fd, p->ai_addr, p->ai_addrlen) != 0) {
+      close(sock_fd);
+      perror("server: bind");
+      continue;
     }
 
-    listen(server_fd, SERVER_BACKLOG);
-    printf("Listening for connections...\n");
-    socklen_t clientlen = sizeof(client_addr);
+    break;
+  }
 
-    if ((newsocket_fd = accept(server_fd, (struct sockaddr*) &server_addr, &clientlen)) == FAILURE) {
-       error("Failed to accept the incoming connection....");
+  freeaddrinfo(res);
+
+  if (p == NULL) {
+    fprintf(stderr, "server: failed to bind\n");
+    exit(1);
+  }
+
+  if (listen(sock_fd, BACKLOG) == -1) {
+    perror("listen");
+    exit(1);
+  }
+  sa.sa_handler = signchild_handler;
+  sigemptyset(&sa.sa_mask);
+  sa.sa_flags = SA_RESTART;
+
+  if (sigaction(SIGCHLD, &sa, NULL) == -1) {
+    perror("sigaction");
+    exit(1);
+  }
+
+  printf("server: waiting for connections...\n");
+
+  while (1) {
+    newsock_fd = accept(sock_fd, &client_info, (socklen_t *)sizeof client_info);
+    if (newsock_fd == -1) {
+      perror("accept");
+      continue;
     }
 
-    char buffer[255];
-    while(1) {
-        bzero(buffer, 255);
-        if ((status = read(newsocket_fd, buffer, 255)) == FAILURE) {
-            error("Reading from socket failed...");
-        }
+    inet_ntop(client_info.sa_family, get_client_addr(&client_info), client_ip,
+              (socklen_t)sizeof client_ip);
+    printf("server: got connection from %s\n", client_ip);
 
-        printf("Client: %s\n", buffer);
-
-        bzero(buffer, 255);
-        fgets(buffer, 255, stdin);
-
-        if ((status = write(newsocket_fd, buffer, 255)) == FAILURE) {
-            error("Writing response to buffer failed...");
-        }
-
-        if ((status = strncmp(buffer, "Bye", 3)) == SUCCESS) {
-            break;
-        }
+    if (fork() == 0) {
+      close(sock_fd);
+      if (send(newsock_fd, "Hello, World!", 13, 0) == -1) 
+        perror("send");
+      close(newsock_fd);
+      exit(0);
     }
+    close(newsock_fd);
+  }
 
-    printf("Closing connection...\n");
-    close(newsocket_fd);
-    close(server_fd);
-    return 0;
+  return 0;
 }

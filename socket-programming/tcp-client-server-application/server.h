@@ -1,18 +1,20 @@
 #ifndef SERVER
 #define SERVER
 
-#define PORT_NO 8080
-#define SERVER_BACKLOG 100
-#define IPADDR 127.0.0.1
+#define PORT "8080"
+#define BACKLOG 100
 
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <errno.h>
 #include <string.h>
 #include <sys/types.h>
-#include <stdlib.h>
-#include <string.h>
-#include <netinet/in.h>
-#include <stdio.h>
-#include <strings.h>
 #include <sys/socket.h>
-#include <unistd.h>
+#include <netinet/in.h>
+#include <netdb.h>
+#include <arpa/inet.h>
+#include <sys/wait.h>
+#include <signal.h>
 
 #endif // SERVER
