@@ -1,4 +1,5 @@
 #include "server.h"
+#include <sys/socket.h>
 
 void error(const char *msg) {
   perror(msg);
@@ -32,16 +33,19 @@ int main() {
   struct sockaddr client_info;
   struct sigaction sa;
 
+  memset(&hints, 0, sizeof hints);
   hints.ai_family = AF_UNSPEC;
   hints.ai_flags = AI_PASSIVE;
+  hints.ai_socktype = SOCK_STREAM;
 
   if ((rv = getaddrinfo(NULL, PORT, &hints, &res)) != 0) {
     fprintf(stderr, "getaddrinfo: %s\n", gai_strerror(rv));
+    exit(0);
   }
 
   for (p = res; p != NULL; p = p->ai_next) {
-    if ((sock_fd = socket(p->ai_family, p->ai_socktype, p->ai_protocol)) != 0) {
-      fprintf(stderr, "socket: socket creation failed\n");
+    if ((sock_fd = socket(p->ai_family, p->ai_socktype, p->ai_protocol)) == -1) {
+      perror("socket");
       continue;
     }
     if (setsockopt(sock_fd, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(int)) ==
