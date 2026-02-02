@@ -44,7 +44,8 @@ int main() {
   }
 
   for (p = res; p != NULL; p = p->ai_next) {
-    if ((sock_fd = socket(p->ai_family, p->ai_socktype, p->ai_protocol)) == -1) {
+    if ((sock_fd = socket(p->ai_family, p->ai_socktype, p->ai_protocol)) ==
+        -1) {
       perror("socket");
       continue;
     }
@@ -86,20 +87,21 @@ int main() {
   printf("server: waiting for connections...\n");
 
   while (1) {
-socklen_t addr_size = sizeof client_info;
-    newsock_fd = accept(sock_fd, (struct sockaddr *) &client_info, &addr_size);
+    socklen_t addr_size = sizeof client_info;
+    newsock_fd = accept(sock_fd, (struct sockaddr *)&client_info, &addr_size);
     if (newsock_fd == -1) {
       perror("accept");
       continue;
     }
 
-    inet_ntop(client_info.ss_family,get_client_addr((struct sockaddr *)&client_info), client_ip,
+    inet_ntop(client_info.ss_family,
+              get_client_addr((struct sockaddr *)&client_info), client_ip,
               (socklen_t)sizeof client_ip);
     printf("server: got connection from %s\n", client_ip);
 
     if (fork() == 0) {
       close(sock_fd);
-      if (send(newsock_fd, "Hello, World!", 13, 0) == -1) 
+      if (send(newsock_fd, "Hello, World!", 13, 0) == -1)
         perror("send");
       close(newsock_fd);
       exit(0);
