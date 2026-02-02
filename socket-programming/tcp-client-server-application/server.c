@@ -30,7 +30,7 @@ int main() {
   int sock_fd, newsock_fd, rv;
   char client_ip[INET6_ADDRSTRLEN];
   struct addrinfo *res, hints, *p;
-  struct sockaddr client_info;
+  struct sockaddr_storage client_info;
   struct sigaction sa;
 
   memset(&hints, 0, sizeof hints);
@@ -86,13 +86,14 @@ int main() {
   printf("server: waiting for connections...\n");
 
   while (1) {
-    newsock_fd = accept(sock_fd, &client_info, (socklen_t *)sizeof client_info);
+socklen_t addr_size = sizeof client_info;
+    newsock_fd = accept(sock_fd, (struct sockaddr *) &client_info, &addr_size);
     if (newsock_fd == -1) {
       perror("accept");
       continue;
     }
 
-    inet_ntop(client_info.sa_family, get_client_addr(&client_info), client_ip,
+    inet_ntop(client_info.ss_family,get_client_addr((struct sockaddr *)&client_info), client_ip,
               (socklen_t)sizeof client_ip);
     printf("server: got connection from %s\n", client_ip);
 

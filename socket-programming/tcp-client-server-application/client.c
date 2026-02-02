@@ -1,21 +1,19 @@
 #include "client.h"
 #include <netdb.h>
 #include <netinet/in.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <sys/socket.h>
 #include <unistd.h>
 
 #define MAXDATALEN 100
 
-void *get_addr(struct addrinfo *sa) {
-  switch (sa->ai_family) {
-  case AF_INET:
-    return &((struct sockaddr_in *)sa)->sin_addr;
-  case AF_INET6:
-    return &((struct sockaddr_in6 *)sa)->sin6_addr;
+void *get_addr(struct addrinfo *ai) {
+  if (ai->ai_family == AF_INET) {
+    return &((struct sockaddr_in *)ai->ai_addr)->sin_addr;
+  } else {
+    return &((struct sockaddr_in6 *)ai->ai_addr)->sin6_addr;
   }
-
-  return NULL;
 }
 
 int main(int argc, char *argv[]) {
@@ -23,18 +21,18 @@ int main(int argc, char *argv[]) {
   char ip[INET6_ADDRSTRLEN];
   struct sockaddr addr;
   char buf[MAXDATALEN];
+
   if (argc != 2) {
     fprintf(stderr, "usage client: need ip to connect");
     exit(EXIT_FAILURE);
   }
 
-  char *ip_to_conn = argv[1];
-  struct addrinfo *hints, *res, *p;
-  memset(hints, 0, sizeof *hints);
-  hints->ai_protocol = SOCK_STREAM;
-  hints->ai_family = AF_UNSPEC;
+  struct addrinfo hints, *res, *p;
+  memset(&hints, 0, sizeof hints);
+  hints.ai_family = AF_UNSPEC;
+  hints.ai_socktype = SOCK_STREAM;
 
-  if ((rv = getaddrinfo(ip_to_conn, PORT, hints, &res) != 0)) {
+  if ((rv = getaddrinfo(argv[1], PORT, &hints, &res)) == -1) {
     perror("getaddrinfo");
     exit(EXIT_FAILURE);
   }
@@ -50,6 +48,7 @@ int main(int argc, char *argv[]) {
     printf("attempting to connect to %s\n", ip);
     if ((rv = connect(sockfd, p->ai_addr, p->ai_addrlen)) == -1) {
       perror("connect");
+      close(sockfd);
       continue;
     }
 
