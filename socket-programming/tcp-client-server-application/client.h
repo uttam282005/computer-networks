@@ -11,4 +11,5 @@
 #include <arpa/inet.h>  // inet_pton, inet_ntoa
 #include <netdb.h>      // gethostbyname, struct hostent
 
+#define PORT "3490"
 #endif // CLIENT_H_

@@ -1,70 +1,76 @@
 #include "client.h"
+#include <netdb.h>
+#include <netinet/in.h>
+#include <stdlib.h>
+#include <sys/socket.h>
+#include <unistd.h>
 
-enum Status {
-    SUCCESS = 0,
-    FAILURE = -1,
-};
+#define MAXDATALEN 100
 
-void error(const char *msg) {
-  perror(msg);
-  exit(1);
+void *get_addr(struct addrinfo *sa) {
+  switch (sa->ai_family) {
+  case AF_INET:
+    return &((struct sockaddr_in *)sa)->sin_addr;
+  case AF_INET6:
+    return &((struct sockaddr_in6 *)sa)->sin6_addr;
+  }
+
+  return NULL;
 }
 
-int main(int argc, char* argv[]) {
-    int sock_fd;
-    char buffer[255];
-    enum Status status;
+int main(int argc, char *argv[]) {
+  int rv, sockfd, numbytes;
+  char ip[INET6_ADDRSTRLEN];
+  struct sockaddr addr;
+  char buf[MAXDATALEN];
+  if (argc != 2) {
+    fprintf(stderr, "usage client: need ip to connect");
+    exit(EXIT_FAILURE);
+  }
 
-    if (argc < 3) {
-        error("Need server port number and Ip address...");
+  char *ip_to_conn = argv[1];
+  struct addrinfo *hints, *res, *p;
+  memset(hints, 0, sizeof *hints);
+  hints->ai_protocol = SOCK_STREAM;
+  hints->ai_family = AF_UNSPEC;
+
+  if ((rv = getaddrinfo(ip_to_conn, PORT, hints, &res) != 0)) {
+    perror("getaddrinfo");
+    exit(EXIT_FAILURE);
+  }
+
+  for (p = res; p != NULL; p = p->ai_next) {
+    if ((sockfd = socket(p->ai_family, p->ai_socktype, p->ai_protocol) == -1)) {
+      perror("socket");
+      continue;
     }
 
-    sock_fd = socket(AF_INET, SOCK_STREAM, 0);
+    inet_ntop(p->ai_family, get_addr(p), ip, sizeof ip);
 
-    char* ipaddr = argv[1];
-    int portno = atoi(argv[2]);
-
-    struct sockaddr_in server_addr;
-    struct hostent* server;
-
-    server = gethostbyname(ipaddr);
-    if (server == NULL) {
-        error("No such server...");
+    printf("attempting to connect to %s\n", ip);
+    if ((rv = connect(sockfd, p->ai_addr, p->ai_addrlen)) == -1) {
+      perror("connect");
+      continue;
     }
 
-    bzero(&server_addr, sizeof(server_addr));
-    server_addr.sin_family = AF_INET;
-    server_addr.sin_port = htons(portno);
-    bcopy(&server_addr.sin_addr.s_addr, server->h_addr, server->h_length);
+    break;
+  }
 
-    if ((status = connect(sock_fd, (struct sockaddr* ) &server_addr, sizeof(server_addr))) == FAILURE) {
-        error("Error connecting to server...");
-    }
+  if (p == NULL) {
+    fprintf(stderr, "failed to connect");
+    exit(EXIT_FAILURE);
+  }
 
-    printf("Connection established...\n");
+  inet_ntop(p->ai_family, get_addr(p), ip, sizeof ip);
+  printf("connected to ip %s", ip);
 
-    while(1) {
-        bzero(buffer, 255);
-        fgets(buffer, 255, stdin);
+  freeaddrinfo(res); // all done with this structure
+  if ((numbytes = recv(sockfd, buf, MAXDATALEN - 1, 0)) == -1) {
+    perror("recv");
+    exit(1);
+  }
 
-        if ((status = write(sock_fd, buffer, 255)) == FAILURE) {
-            error("Error writing to the socket...");
-        }
+  buf[numbytes] = '\0';
 
-        bzero(buffer, 255);
-
-        if ((status = read(sock_fd, buffer, 255)) == FAILURE) {
-           error("Error reading from socket...");
-        }
-
-        printf("Server: %s\n", buffer);
-
-        if ((status = strncmp(buffer, "Bye", 3)) == SUCCESS) {
-            break;
-        }
-    }
-
-    printf("Closing connection...\n");
-    close(sock_fd);
-    return 0;
+  printf("client: received '%s'\n", buf);
 }
