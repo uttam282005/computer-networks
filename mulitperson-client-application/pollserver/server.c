@@ -6,6 +6,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/poll.h>
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <unistd.h>
@@ -163,7 +164,7 @@ int main(void) {
         }
 
         for (int i = 0; i < fd_count; i++) {
-            if (pfds[i].revents & POLLIN) {
+            if (pfds[i].revents & (POLLIN | POLLHUP)) {
                 if (pfds[i].fd == listener) {
                     handle_new_connection(listener, &pfds,
                                           &fd_count, &fd_size);
