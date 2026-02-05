@@ -1,178 +1,206 @@
+/*
+ *
+ ** selectserver.c -- a cheezy multiperson chat server
+ */
+
 #include <arpa/inet.h>
 #include <netdb.h>
 #include <netinet/in.h>
-#include <poll.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/poll.h>
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <unistd.h>
 
-#define PORT "8080"
-#define BACKLOG 10
+#define PORT "9034" // port we're listening on
 
-void *get_addr(struct sockaddr_storage *sa) {
-    if (sa->ss_family == AF_INET) {
-        return &((struct sockaddr_in *)sa)->sin_addr;
-    }
-    return &((struct sockaddr_in6 *)sa)->sin6_addr;
+/*
+ * Convert socket to IP address string.
+ * addr: struct sockaddr_in or struct sockaddr_in6
+ */
+const char *inet_ntop2(void *addr, char *buf, size_t size) {
+  struct sockaddr_storage *sas = addr;
+  struct sockaddr_in *sa4;
+  struct sockaddr_in6 *sa6;
+  void *src;
+
+  switch (sas->ss_family) {
+  case AF_INET:
+    sa4 = addr;
+    src = &(sa4->sin_addr);
+    break;
+  case AF_INET6:
+    sa6 = addr;
+    src = &(sa6->sin6_addr);
+    break;
+  default:
+    return NULL;
+  }
+
+  return inet_ntop(sas->ss_family, src, buf, size);
 }
 
-void get_ip(struct sockaddr_storage *sa, char *buf, size_t len) {
-    inet_ntop(sa->ss_family, get_addr(sa), buf, len);
-}
+/*
+ * Return a listening socket
+ */
+int get_listener_socket(void) {
+  struct addrinfo hints, *ai, *p;
+  int yes = 1; // for setsockopt() SO_REUSEADDR, below
+  int rv;
+  int listener;
 
-int get_listening_socket(void) {
-    int yes = 1;
-    int sockfd = -1;
-    struct addrinfo hints, *res, *p;
+  // get us a socket and bind it
+  memset(&hints, 0, sizeof hints);
+  hints.ai_family = AF_UNSPEC;
+  hints.ai_socktype = SOCK_STREAM;
+  hints.ai_flags = AI_PASSIVE;
+  if ((rv = getaddrinfo(NULL, PORT, &hints, &ai)) != 0) {
+    fprintf(stderr, "selectserver: %s\n", gai_strerror(rv));
+    exit(1);
+  }
 
-    memset(&hints, 0, sizeof hints);
-    hints.ai_family = AF_UNSPEC;
-    hints.ai_socktype = SOCK_STREAM;
-    hints.ai_flags = AI_PASSIVE;
-
-    int rv = getaddrinfo(NULL, PORT, &hints, &res);
-    if (rv != 0) {
-        fprintf(stderr, "getaddrinfo: %s\n", gai_strerror(rv));
-        return -1;
+  for (p = ai; p != NULL; p = p->ai_next) {
+    listener = socket(p->ai_family, p->ai_socktype, p->ai_protocol);
+    if (listener < 0) {
+      continue;
     }
 
-    for (p = res; p != NULL; p = p->ai_next) {
-        sockfd = socket(p->ai_family, p->ai_socktype, p->ai_protocol);
-        if (sockfd == -1) continue;
+    // lose the pesky "address already in use" error message
+    setsockopt(listener, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(int));
 
-        setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof yes);
+    if (bind(listener, p->ai_addr, p->ai_addrlen) < 0) {
+      close(listener);
+      continue;
+    }
 
-        if (bind(sockfd, p->ai_addr, p->ai_addrlen) == -1) {
-            close(sockfd);
-            continue;
+    break;
+  }
+
+  // if we got here, it means we didn't get bound
+  if (p == NULL) {
+    fprintf(stderr, "selectserver: failed to bind\n");
+    exit(2);
+  }
+
+  freeaddrinfo(ai); // all done with this
+
+  // listen
+  if (listen(listener, 10) == -1) {
+    perror("listen");
+    exit(3);
+  }
+
+  return listener;
+}
+
+/*
+ * Add new incoming connections to the proper sets
+ */
+void handle_new_connection(int listener, fd_set *master, int *fdmax) {
+  socklen_t addrlen;
+  int newfd;                          // newly accept()ed socket descriptor
+  struct sockaddr_storage remoteaddr; // client address
+  char remoteIP[INET6_ADDRSTRLEN];
+
+  addrlen = sizeof remoteaddr;
+  newfd = accept(listener, (struct sockaddr *)&remoteaddr, &addrlen);
+
+  if (newfd == -1) {
+    perror("accept");
+  } else {
+    FD_SET(newfd, master); // add to master set
+    if (newfd > *fdmax) {  // keep track of the max
+      *fdmax = newfd;
+    }
+    printf("selectserver: new connection from %s on "
+           "socket %d\n",
+           inet_ntop2(&remoteaddr, remoteIP, sizeof remoteIP), newfd);
+  }
+}
+
+/*
+ * Broadcast a message to all clients
+ */
+void broadcast(char *buf, int nbytes, int listener, int s, fd_set *master,
+               int fdmax) {
+  for (int j = 0; j <= fdmax; j++) {
+    // send to everyone!
+    if (FD_ISSET(j, master)) {
+      // except the listener and ourselves
+      if (j != listener && j != s) {
+        if (send(j, buf, nbytes, 0) == -1) {
+          perror("send");
         }
-        break;
+      }
     }
-
-    freeaddrinfo(res);
-
-    if (!p) {
-        fprintf(stderr, "failed to bind\n");
-        return -1;
-    }
-
-    if (listen(sockfd, BACKLOG) == -1) {
-        close(sockfd);
-        return -1;
-    }
-
-    return sockfd;
+  }
 }
 
-void delete_from_pfds(struct pollfd *pfds, int *i, int *fd_count) {
-    pfds[*i] = pfds[*fd_count - 1];
-    (*fd_count)--;
-    (*i)--;
+/*
+ * Handle client data and hangups
+ */
+void handle_client_data(int s, int listener, fd_set *master, int fdmax) {
+  char buf[256]; // buffer for client data
+  int nbytes;
+
+  // handle data from a client
+  if ((nbytes = recv(s, buf, sizeof buf, 0)) <= 0) {
+    // got error or connection closed by client
+    if (nbytes == 0) {
+      // connection closed
+      printf("selectserver: socket %d hung up\n", s);
+    } else {
+      perror("recv");
+    }
+    close(s);          // bye!
+    FD_CLR(s, master); // remove from master set
+  } else {
+    // we got some data from a client
+    broadcast(buf, nbytes, listener, s, master, fdmax);
+  }
 }
 
-void add_to_pfds(int newfd, struct pollfd **pfds, int *fd_size, int *fd_count) {
-    if (*fd_count == *fd_size) {
-        *fd_size *= 2;
-        struct pollfd *tmp = realloc(*pfds, sizeof(**pfds) * (*fd_size));
-        if (!tmp) {
-            perror("realloc");
-            exit(1);
-        }
-        *pfds = tmp;
-    }
-
-    (*pfds)[*fd_count].fd = newfd;
-    (*pfds)[*fd_count].events = POLLIN;
-    (*pfds)[*fd_count].revents = 0;
-    (*fd_count)++;
-}
-
-void handle_new_connection(int listener, struct pollfd **pfds,
-                           int *fd_count, int *fd_size) {
-    struct sockaddr_storage client_addr;
-    socklen_t addrlen = sizeof client_addr;
-    int newfd = accept(listener, (struct sockaddr *)&client_addr, &addrlen);
-
-    if (newfd == -1) {
-        perror("accept");
-        return;
-    }
-
-    add_to_pfds(newfd, pfds, fd_size, fd_count);
-
-    char ip[INET6_ADDRSTRLEN];
-    get_ip(&client_addr, ip, sizeof ip);
-    printf("new connection from %s on fd %d\n", ip, newfd);
-}
-
-void handle_client(int listener, struct pollfd *pfds,
-                   int *fd_count, int *i) {
-    char buf[256];
-    int client_fd = pfds[*i].fd;
-
-    int nbytes = recv(client_fd, buf, sizeof buf, 0);
-    if (nbytes <= 0) {
-        if (nbytes == 0) {
-            printf("connection closed: fd %d\n", client_fd);
-        } else {
-            perror("recv");
-        }
-
-        close(client_fd);
-        delete_from_pfds(pfds, i, fd_count);
-        return;
-    }
-
-    for (int j = 0; j < *fd_count; j++) {
-        int dest_fd = pfds[j].fd;
-        if (dest_fd != listener && dest_fd != client_fd) {
-            send(dest_fd, buf, nbytes, 0);
-        }
-    }
-}
-
+/*
+ * Main
+ */
 int main(void) {
-    int listener = get_listening_socket();
-    if (listener == -1) {
-        fprintf(stderr, "failed to create listening socket\n");
-        exit(1);
+  fd_set master;   // master file descriptor list
+  fd_set read_fds; // temp file descriptor list for select()
+  int fdmax;       // maximum file descriptor number
+
+  int listener; // listening socket descriptor
+
+  FD_ZERO(&master); // clear the master and temp sets
+  FD_ZERO(&read_fds);
+
+  listener = get_listener_socket();
+
+  // add the listener to the master set
+  FD_SET(listener, &master);
+
+  // keep track of the biggest file descriptor
+  fdmax = listener; // so far, it's this one
+
+  // main loop
+  for (;;) {
+    read_fds = master; // copy it
+    if (select(fdmax + 1, &read_fds, NULL, NULL, NULL) == -1) {
+      perror("select");
+      exit(4);
     }
 
-    int fd_size = 5;
-    int fd_count = 1;
-
-    struct pollfd *pfds = malloc(sizeof *pfds * fd_size);
-    if (!pfds) {
-        perror("malloc");
-        exit(1);
+    // run through the existing connections looking for data
+    // to read
+    for (int i = 0; i <= fdmax; i++) {
+      if (FD_ISSET(i, &read_fds)) { // we got one!!
+        if (i == listener)
+          handle_new_connection(i, &master, &fdmax);
+        else
+          handle_client_data(i, listener, &master, fdmax);
+      }
     }
+  }
 
-    pfds[0].fd = listener;
-    pfds[0].events = POLLIN;
-
-    puts("pollserver: waiting for connections...");
-
-    while (1) {
-        if (poll(pfds, fd_count, -1) == -1) {
-            perror("poll");
-            exit(1);
-        }
-
-        for (int i = 0; i < fd_count; i++) {
-            if (pfds[i].revents & (POLLIN | POLLHUP)) {
-                if (pfds[i].fd == listener) {
-                    handle_new_connection(listener, &pfds,
-                                          &fd_count, &fd_size);
-                } else {
-                    handle_client(listener, pfds,
-                                  &fd_count, &i);
-                }
-            }
-        }
-    }
+  return 0;
 }
-
