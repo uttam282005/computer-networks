@@ -95,26 +95,33 @@ class UDP:
         )
 
 
-# TODO feel free to add helper functions if you'd like
-
-def parse_ip_header(packet):
+def parse_ip_header(packet) -> IPv4:
     ip = IPv4(b'why this')
 
     ihl_version = packet[0]
     ihl = ihl_version >> 4
 
-    ip.version = (ihl_version & 0x10)
+    ip.version = (ihl_version & 0xf)
     ip.header_len = int((ihl * 32) / 8)
 
-    ip_header = packet[:ip.header_len] # 20 to 60 bytes
+    ip.tos = packet[1]
+    ip.length = packet[2:4]
+    ip.id = packet[4:6]
 
-    ip.tos = ip_header[1]
-    ip.length = ip_header[2:4]
-    ip.id = ip_header[4:6]
+    flags_fragment_offset = packet[6: 8]
+    ip.frag_offset = flags_fragment_offset >> 3
+    ip.flags = flags_fragment_offset & 0x7
 
+    ip.ttl = packet[8]
+    ip.proto = packet[9]
+    ip.cksum = packet[10:12]
+    ip.src = packet[12:16]
+    ip.dst = packet[16:20]
 
+    return ip
 
-
+def parse_icmp(packet):
+    pass
 
 
 def traceroute(
@@ -148,9 +155,14 @@ def traceroute(
             can_receive = recvsock.recv_select()
             if can_receive:
                 packet, addr = recvsock.recvfrom()
-                IPv4 ip_header = parse_ip_header(packet)
-                ICMP icmp_header = parse_icmp_header(packet)
+                ihl_version = packet[0]
+                ihl = ihl_version >> 4
+
+                ip_header = parse_ip_header(packet)
+                icmp_header = parse_icmp_header(packet[ihl: ihl + 8])
+
                 routers.append(addr[0])
+                break
 
         all_routers.append(routers)
         util.print_result(routers, ttl)
