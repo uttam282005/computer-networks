@@ -96,36 +96,37 @@ class UDP:
 
 
 def parse_ip_header(packet) -> IPv4:
-    ip = IPv4(b'why this')
+    ip = IPv4(b'')
 
-    ihl_version = packet[0]
-    ihl = ihl_version >> 4
-
-    ip.version = (ihl_version & 0xf)
-    ip.header_len = int((ihl * 32) / 8)
+    version_ihl = packet[0]
+    ip.version = version_ihl >> 4
+    ihl = version_ihl & 0x0F
+    ip.header_len = ihl * 4
 
     ip.tos = packet[1]
-    ip.length = packet[2:4]
-    ip.id = packet[4:6]
+    ip.length = int.from_bytes(packet[2:4], 'big')
+    ip.id = int.from_bytes(packet[4:6], 'big')
 
-    flags_fragment_offset = packet[6: 8]
-    ip.frag_offset = flags_fragment_offset >> 3
-    ip.flags = flags_fragment_offset & 0x7
+    flags_fragment = int.from_bytes(packet[6:8], 'big')
+    ip.flags = (flags_fragment >> 13) & 0x7
+    ip.frag_offset = flags_fragment & 0x1FFF
 
     ip.ttl = packet[8]
     ip.proto = packet[9]
-    ip.cksum = packet[10:12]
-    ip.src = packet[12:16]
-    ip.dst = packet[16:20]
+    ip.cksum = int.from_bytes(packet[10:12], 'big')
+
+    ip.src = util.inet_ntoa(packet[12:16])
+    ip.dst = util.inet_ntoa(packet[16:20])
 
     return ip
 
-def parse_icmp(packet) -> ICMP:
-    icmp = ICMP(b'again why')
+
+def parse_icmp_header(packet) -> ICMP:
+    icmp = ICMP(b'')
 
     icmp.type = packet[0]
     icmp.code = packet[1]
-    icmp.cksum = packet[2:4]
+    icmp.cksum = int.from_bytes(packet[2:4], 'big')
 
     return icmp
 
@@ -152,7 +153,7 @@ def traceroute(
 
     # TODO Add your implementation
     all_routers = []
-    for ttl in range(1, TRACEROUTE_MAX_TTL + 1):
+    for ttl in range(1, 2):
         routers = []
         sendsock.set_ttl(ttl)
         for _ in range(PROBE_ATTEMPT_COUNT + 1):
@@ -160,11 +161,15 @@ def traceroute(
             can_receive = recvsock.recv_select()
             if can_receive:
                 packet, addr = recvsock.recvfrom()
-                ihl_version = packet[0]
-                ihl = ihl_version >> 4
+                version_ihl = packet[0]
+                ihl = version_ihl & 0xf
+                ihl = ihl*4
 
                 ip_header = parse_ip_header(packet)
                 icmp_header = parse_icmp_header(packet[ihl: ihl + 8])
+
+                print(icmp_header)
+                print(ip_header)
 
                 routers.append(addr[0])
                 break
