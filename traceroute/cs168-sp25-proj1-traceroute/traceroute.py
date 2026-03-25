@@ -5,6 +5,9 @@ import util
 # Most traceroute implementations cap at approximately 30.  The unit tests
 # assume you don't change this number.
 TRACEROUTE_MAX_TTL = 30
+ICMP_TIME_EXCEEDED_TYPE = 11
+ICMP_TIME_EXCEEDED_CODE = 0
+MAX_ROUTERS_COUNT = 4
 
 # Cisco seems to have standardized on UDP ports [33434, 33464] for traceroute.
 # While not a formal standard, it appears that some routers on the internet
@@ -18,6 +21,7 @@ TRACEROUTE_PORT_NUMBER = 33434  # Cisco traceroute port number.
 # single router before giving up and moving on.
 PROBE_ATTEMPT_COUNT = 3
 
+
 class IPv4:
     # Each member below is a field from the IPv4 packet header.  They are
     # listed below in the order they appear in the packet.  All fields should
@@ -26,8 +30,8 @@ class IPv4:
     # You should only modify the __init__() method of this class.
     version: int
     header_len: int  # Note length in bytes, not the value in the packet.
-    tos: int         # Also called DSCP and ECN bits (i.e. on wikipedia).
-    length: int      # Total length of the packet.
+    tos: int  # Also called DSCP and ECN bits (i.e. on wikipedia).
+    length: int  # Total length of the packet.
     id: int
     flags: int
     frag_offset: int
@@ -41,12 +45,14 @@ class IPv4:
         pass  # TODO
 
     def __str__(self) -> str:
-        return f"IPv{self.version} (tos 0x{self.tos:x}, ttl {self.ttl}, " + \
-            f"id {self.id}, flags 0x{self.flags:x}, " + \
-            f"ofsset {self.frag_offset}, " + \
-            f"proto {self.proto}, header_len {self.header_len}, " + \
-            f"len {self.length}, cksum 0x{self.cksum:x}) " + \
-            f"{self.src} > {self.dst}"
+        return (
+            f"IPv{self.version} (tos 0x{self.tos:x}, ttl {self.ttl}, "
+            + f"id {self.id}, flags 0x{self.flags:x}, "
+            + f"ofsset {self.frag_offset}, "
+            + f"proto {self.proto}, header_len {self.header_len}, "
+            + f"len {self.length}, cksum 0x{self.cksum:x}) "
+            + f"{self.src} > {self.dst}"
+        )
 
 
 class ICMP:
@@ -63,8 +69,9 @@ class ICMP:
         pass  # TODO
 
     def __str__(self) -> str:
-        return f"ICMP (type {self.type}, code {self.code}, " + \
-            f"cksum 0x{self.cksum:x})"
+        return (
+            f"ICMP (type {self.type}, code {self.code}, " + f"cksum 0x{self.cksum:x})"
+        )
 
 
 class UDP:
@@ -82,14 +89,38 @@ class UDP:
         pass  # TODO
 
     def __str__(self) -> str:
-        return f"UDP (src_port {self.src_port}, dst_port {self.dst_port}, " + \
-            f"len {self.len}, cksum 0x{self.cksum:x})"
+        return (
+            f"UDP (src_port {self.src_port}, dst_port {self.dst_port}, "
+            + f"len {self.len}, cksum 0x{self.cksum:x})"
+        )
+
 
 # TODO feel free to add helper functions if you'd like
 
-def traceroute(sendsock: util.Socket, recvsock: util.Socket, ip: str) \
-        -> list[list[str]]:
-    """ Run traceroute and returns the discovered path.
+def parse_ip_header(packet):
+    ip = IPv4(b'why this')
+
+    ihl_version = packet[0]
+    ihl = ihl_version >> 4
+
+    ip.version = (ihl_version & 0x10)
+    ip.header_len = int((ihl * 32) / 8)
+
+    ip_header = packet[:ip.header_len] # 20 to 60 bytes
+
+    ip.tos = ip_header[1]
+    ip.length = ip_header[2:4]
+    ip.id = ip_header[4:6]
+
+
+
+
+
+
+def traceroute(
+    sendsock: util.Socket, recvsock: util.Socket, ip: str
+) -> list[list[str]]:
+    """Run traceroute and returns the discovered path.
 
     Calls util.print_result() on the result of each TTL's probes to show
     progress.
@@ -108,12 +139,24 @@ def traceroute(sendsock: util.Socket, recvsock: util.Socket, ip: str) \
     """
 
     # TODO Add your implementation
-    for ttl in range(1, TRACEROUTE_MAX_TTL+1):
-        util.print_result([], ttl)
-    return []
+    all_routers = []
+    for ttl in range(1, TRACEROUTE_MAX_TTL + 1):
+        routers = []
+        sendsock.set_ttl(ttl)
+        for _ in range(PROBE_ATTEMPT_COUNT + 1):
+            sendsock.sendto(b"hello", (ip, TRACEROUTE_PORT_NUMBER))
+            can_receive = recvsock.recv_select()
+            if can_receive:
+                packet, addr = recvsock.recvfrom()
+                IPv4 ip_header = parse_ip_header(packet)
+                ICMP icmp_header = parse_icmp_header(packet)
+                routers.append(addr[0])
 
+        all_routers.append(routers)
+        util.print_result(routers, ttl)
+    return all_routers
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     args = util.parse_args()
     ip_addr = util.gethostbyname(args.host)
     print(f"traceroute to {args.host} ({ip_addr})")

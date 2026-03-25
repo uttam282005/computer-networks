@@ -56,6 +56,9 @@ def inet_ntop(x, y):
 def gethostbyname(host: str):
     return socket.gethostbyname(host)
 
+def gethostbyaddr(addr):
+    return socket.gethostbyaddr(addr)[0]
+
 
 class Socket:
     __sock: socket.socket
