@@ -5,9 +5,9 @@ import util
 # Most traceroute implementations cap at approximately 30.  The unit tests
 # assume you don't change this number.
 TRACEROUTE_MAX_TTL = 30
-ICMP_TIME_EXCEEDED_TYPE = 11
-ICMP_TIME_EXCEEDED_CODE = 0
+TIME_EXCEEDED = 11
 MAX_ROUTERS_COUNT = 4
+DESTINATION_UNREACHABLE = 3
 
 # Cisco seems to have standardized on UDP ports [33434, 33464] for traceroute.
 # While not a formal standard, it appears that some routers on the internet
@@ -151,27 +151,32 @@ def traceroute(
     should be included as the final element in the list.
     """
 
-    # TODO Add your implementation
     all_routers = []
-    for ttl in range(1, 2):
+    for ttl in range(1, TRACEROUTE_MAX_TTL + 1):
         routers = []
         sendsock.set_ttl(ttl)
         for _ in range(PROBE_ATTEMPT_COUNT + 1):
             sendsock.sendto(b"hello", (ip, TRACEROUTE_PORT_NUMBER))
             can_receive = recvsock.recv_select()
             if can_receive:
-                packet, addr = recvsock.recvfrom()
+                packet, _ = recvsock.recvfrom()
                 version_ihl = packet[0]
                 ihl = version_ihl & 0xf
-                ihl = ihl*4
+                ihl = ihl * 4
 
                 ip_header = parse_ip_header(packet)
-                icmp_header = parse_icmp_header(packet[ihl: ihl + 8])
 
-                print(icmp_header)
-                print(ip_header)
+                if ip_header.proto == 1:
+                    icmp_header = parse_icmp_header(packet[ihl: ihl + 8])
 
-                routers.append(addr[0])
+                    if icmp_header.type == TIME_EXCEEDED:
+                        routers.append(ip_header.src)
+
+                    if icmp_header.type == DESTINATION_UNREACHABLE:
+                        print("destination reached")
+                        routers.append(ip_header.src)
+                        all_routers.append(routers)
+                        return all_routers
                 break
 
         all_routers.append(routers)
