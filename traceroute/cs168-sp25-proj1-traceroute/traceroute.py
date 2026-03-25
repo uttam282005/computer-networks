@@ -120,9 +120,14 @@ def parse_ip_header(packet) -> IPv4:
 
     return ip
 
-def parse_icmp(packet):
-    pass
+def parse_icmp(packet) -> ICMP:
+    icmp = ICMP(b'again why')
 
+    icmp.type = packet[0]
+    icmp.code = packet[1]
+    icmp.cksum = packet[2:4]
+
+    return icmp
 
 def traceroute(
     sendsock: util.Socket, recvsock: util.Socket, ip: str
