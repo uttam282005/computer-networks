@@ -1,3 +1,4 @@
+from socket import AF_INET
 import util
 
 # Your program should send TTLs in the range [1, TRACEROUTE_MAX_TTL] inclusive.
@@ -115,8 +116,8 @@ def parse_ip_header(packet) -> IPv4:
     ip.proto = packet[9]
     ip.cksum = int.from_bytes(packet[10:12], 'big')
 
-    ip.src = util.inet_ntoa(packet[12:16])
-    ip.dst = util.inet_ntoa(packet[16:20])
+    ip.src = util.inet_ntop(AF_INET, packet[12:16])
+    ip.dst = util.inet_ntop(AF_INET, packet[16:20])
 
     return ip
 
