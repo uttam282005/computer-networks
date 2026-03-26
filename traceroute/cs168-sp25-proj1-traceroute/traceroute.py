@@ -154,7 +154,7 @@ def traceroute(
 
     all_routers = []
     for ttl in range(1, TRACEROUTE_MAX_TTL + 1):
-        routers = []
+        routers = set()
         sendsock.set_ttl(ttl)
         for _ in range(PROBE_ATTEMPT_COUNT + 1):
             sendsock.sendto(b"hello", (ip, TRACEROUTE_PORT_NUMBER))
@@ -171,17 +171,16 @@ def traceroute(
                     icmp_header = parse_icmp_header(packet[ihl: ihl + 8])
 
                     if icmp_header.type == TIME_EXCEEDED:
-                        routers.append(ip_header.src)
+                        routers.add(ip_header.src)
 
                     if icmp_header.type == DESTINATION_UNREACHABLE:
                         print("destination reached")
-                        routers.append(ip_header.src)
-                        all_routers.append(routers)
+                        routers.add(ip_header.src)
+                        all_routers.append(list(routers))
                         return all_routers
-                break
 
         all_routers.append(routers)
-        util.print_result(routers, ttl)
+        util.print_result(list(routers), ttl)
     return all_routers
 
 if __name__ == "__main__":
