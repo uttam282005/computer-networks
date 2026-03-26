@@ -8,6 +8,8 @@ import util
 TRACEROUTE_MAX_TTL = 30
 TIME_EXCEEDED = 11
 DESTINATION_UNREACHABLE = 3
+PORT_UNREACHABLE = 3
+TTL_EXPIRED = 0
 
 # Cisco seems to have standardized on UDP ports [33434, 33464] for traceroute.
 # While not a formal standard, it appears that some routers on the internet
@@ -148,19 +150,15 @@ def traceroute(
             can_receive = recvsock.recv_select()
             if can_receive:
                 packet, _ = recvsock.recvfrom()
-                version_ihl = packet[0]
-                ihl = version_ihl & 0xf
-                ihl = ihl * 4
 
                 ip_header = IPv4(packet)
-
                 if ip_header.proto == 1:
-                    icmp_header = ICMP(packet[ihl: ihl + 8])
+                    icmp_header = ICMP(packet[ip_header.header_len: ip_header.header_len + 8])
 
-                    if icmp_header.type == TIME_EXCEEDED:
+                    if icmp_header.type == TIME_EXCEEDED and icmp_header.code == TTL_EXPIRED:
                         routers.add(ip_header.src)
 
-                    if icmp_header.type == DESTINATION_UNREACHABLE:
+                    if icmp_header.type == DESTINATION_UNREACHABLE and icmp_header.code == PORT_UNREACHABLE:
                         print("destination reached")
                         routers.add(ip_header.src)
                         all_routers.append(list(routers))
