@@ -42,8 +42,26 @@ class IPv4:
     src: str
     dst: str
 
-    def __init__(self, buffer: bytes):
-        pass  # TODO
+    def __init__(self, packet: bytes):
+        version_ihl = packet[0]
+        self.version = version_ihl >> 4
+        ihl = version_ihl & 0x0F
+        self.header_len = ihl * 4
+
+        self.tos = packet[1]
+        self.length = int.from_bytes(packet[2:4], 'big')
+        self.id = int.from_bytes(packet[4:6], 'big')
+
+        flags_fragment = int.from_bytes(packet[6:8], 'big')
+        self.flags = (flags_fragment >> 13) & 0x7
+        self.frag_offset = flags_fragment & 0x1FFF
+
+        self.ttl = packet[8]
+        self.proto = packet[9]
+        self.cksum = int.from_bytes(packet[10:12], 'big')
+
+        self.src = util.inet_ntop(AF_INET, packet[12:16])
+        self.dst = util.inet_ntop(AF_INET, packet[16:20])
 
     def __str__(self) -> str:
         return (
@@ -66,8 +84,11 @@ class ICMP:
     code: int
     cksum: int
 
-    def __init__(self, buffer: bytes):
-        pass  # TODO
+    def __init__(self, packet: bytes):
+        self.type = packet[0]
+        self.code = packet[1]
+        self.cksum = int.from_bytes(packet[2:4], 'big')
+
 
     def __str__(self) -> str:
         return (
@@ -86,50 +107,14 @@ class UDP:
     len: int
     cksum: int
 
-    def __init__(self, buffer: bytes):
-        pass  # TODO
+    def __init__(self, packet: bytes):
+        pass
 
     def __str__(self) -> str:
         return (
             f"UDP (src_port {self.src_port}, dst_port {self.dst_port}, "
             + f"len {self.len}, cksum 0x{self.cksum:x})"
         )
-
-
-def parse_ip_header(packet) -> IPv4:
-    ip = IPv4(b'')
-
-    version_ihl = packet[0]
-    ip.version = version_ihl >> 4
-    ihl = version_ihl & 0x0F
-    ip.header_len = ihl * 4
-
-    ip.tos = packet[1]
-    ip.length = int.from_bytes(packet[2:4], 'big')
-    ip.id = int.from_bytes(packet[4:6], 'big')
-
-    flags_fragment = int.from_bytes(packet[6:8], 'big')
-    ip.flags = (flags_fragment >> 13) & 0x7
-    ip.frag_offset = flags_fragment & 0x1FFF
-
-    ip.ttl = packet[8]
-    ip.proto = packet[9]
-    ip.cksum = int.from_bytes(packet[10:12], 'big')
-
-    ip.src = util.inet_ntop(AF_INET, packet[12:16])
-    ip.dst = util.inet_ntop(AF_INET, packet[16:20])
-
-    return ip
-
-
-def parse_icmp_header(packet) -> ICMP:
-    icmp = ICMP(b'')
-
-    icmp.type = packet[0]
-    icmp.code = packet[1]
-    icmp.cksum = int.from_bytes(packet[2:4], 'big')
-
-    return icmp
 
 def traceroute(
     sendsock: util.Socket, recvsock: util.Socket, ip: str
@@ -165,10 +150,10 @@ def traceroute(
                 ihl = version_ihl & 0xf
                 ihl = ihl * 4
 
-                ip_header = parse_ip_header(packet)
+                ip_header = IPv4(packet)
 
                 if ip_header.proto == 1:
-                    icmp_header = parse_icmp_header(packet[ihl: ihl + 8])
+                    icmp_header = ICMP(packet[ihl: ihl + 8])
 
                     if icmp_header.type == TIME_EXCEEDED:
                         routers.add(ip_header.src)
