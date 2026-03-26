@@ -7,7 +7,6 @@ import util
 # assume you don't change this number.
 TRACEROUTE_MAX_TTL = 30
 TIME_EXCEEDED = 11
-MAX_ROUTERS_COUNT = 4
 DESTINATION_UNREACHABLE = 3
 
 # Cisco seems to have standardized on UDP ports [33434, 33464] for traceroute.
@@ -108,7 +107,10 @@ class UDP:
     cksum: int
 
     def __init__(self, packet: bytes):
-        pass
+        self.src_port = int.from_bytes(packet[0:2], 'big')
+        self.dst_port = int.from_bytes(packet[2:4], 'big')
+        self.len = int.from_bytes(packet[4:6], 'big')
+        self.cksum = int.from_bytes(packet[6:8], 'big')
 
     def __str__(self) -> str:
         return (
