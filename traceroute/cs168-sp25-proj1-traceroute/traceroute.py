@@ -10,6 +10,7 @@ TIME_EXCEEDED = 11
 DESTINATION_UNREACHABLE = 3
 PORT_UNREACHABLE = 3
 TTL_EXPIRED = 0
+_ICMP = 1
 
 # Cisco seems to have standardized on UDP ports [33434, 33464] for traceroute.
 # While not a formal standard, it appears that some routers on the internet
@@ -120,6 +121,16 @@ class UDP:
             + f"len {self.len}, cksum 0x{self.cksum:x})"
         )
 
+def is_valid_payload(packet, dst_port) -> bool:
+    ip_cpy = IPv4(packet)
+    udp_cpy = UDP(packet[ip_cpy.header_len:])
+
+    if udp_cpy.dst_port != dst_port:
+        return False
+
+    return True
+
+
 def traceroute(
     sendsock: util.Socket, recvsock: util.Socket, ip: str
 ) -> list[list[str]]:
@@ -145,24 +156,32 @@ def traceroute(
     for ttl in range(1, TRACEROUTE_MAX_TTL + 1):
         routers = set()
         sendsock.set_ttl(ttl)
-        for _ in range(PROBE_ATTEMPT_COUNT + 1):
-            sendsock.sendto(b"hello", (ip, TRACEROUTE_PORT_NUMBER))
+        for p in range(PROBE_ATTEMPT_COUNT + 1):
+            dst_port = TRACEROUTE_PORT_NUMBER + ttl * 3 + p
+            sendsock.sendto(b"hello", (ip, dst_port))
+
             can_receive = recvsock.recv_select()
             if can_receive:
                 packet, _ = recvsock.recvfrom()
 
                 ip_header = IPv4(packet)
-                if ip_header.proto == 1:
-                    icmp_header = ICMP(packet[ip_header.header_len: ip_header.header_len + 8])
 
-                    if icmp_header.type == TIME_EXCEEDED and icmp_header.code == TTL_EXPIRED:
-                        routers.add(ip_header.src)
+                if ip_header.proto != _ICMP:
+                    continue
 
-                    if icmp_header.type == DESTINATION_UNREACHABLE and icmp_header.code == PORT_UNREACHABLE:
-                        print("destination reached")
-                        routers.add(ip_header.src)
-                        all_routers.append(list(routers))
-                        return all_routers
+                icmp_packet = packet[ip_header.header_len:]
+                if not is_valid_payload(icmp_packet[8:], dst_port):
+                    continue
+
+                icmp_header = ICMP(icmp_packet)
+
+                if icmp_header.type == TIME_EXCEEDED and icmp_header.code == TTL_EXPIRED:
+                    routers.add(ip_header.src)
+
+                if icmp_header.type == DESTINATION_UNREACHABLE and icmp_header.code == PORT_UNREACHABLE:
+                    routers.add(ip_header.src)
+                    all_routers.append(list(routers))
+                    return all_routers
 
         all_routers.append(routers)
         util.print_result(list(routers), ttl)
