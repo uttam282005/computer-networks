@@ -182,6 +182,8 @@ def traceroute(
                     routers.add(ip_header.src)
                     all_routers.append(list(routers))
                     return all_routers
+            else: 
+                print("F")
 
         all_routers.append(routers)
         util.print_result(list(routers), ttl)
