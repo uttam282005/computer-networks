@@ -96,9 +96,11 @@ class DVRouter(DVRouterBase):
         :param in_port: the port from which the packet arrived.
         :return: nothing.
         """
-        
-        ##### Begin Stage 2 #####
 
+        ##### Begin Stage 2 #####
+        next_hop = self.table.get(packet.dst, None)
+        if next_hop and next_hop.latency < INFINITY:
+            self.send(packet=packet, port=next_hop.port)
         ##### End Stage 2 #####
 
     def send_routes(self, force=False, single_port=None):
