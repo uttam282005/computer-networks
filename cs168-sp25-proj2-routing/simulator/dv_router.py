@@ -116,7 +116,9 @@ class DVRouter(DVRouterBase):
         """
         
         ##### Begin Stages 3, 6, 7, 8, 10 #####
-
+        for p in self.ports.get_all_ports():
+            for dst, entry in self.table.items():
+                self.send_route(port=p, dst=dst, latency=entry.latency)
         ##### End Stages 3, 6, 7, 8, 10 #####
 
     def expire_routes(self):
@@ -124,8 +126,9 @@ class DVRouter(DVRouterBase):
         Clears out expired routes from table.
         accordingly.
         """
-        
+
         ##### Begin Stages 5, 9 #####
+
 
         ##### End Stages 5, 9 #####
 
