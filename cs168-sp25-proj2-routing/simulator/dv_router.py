@@ -18,7 +18,6 @@ from cs168.dv import (
 
 
 class DVRouter(DVRouterBase):
-
     # A route should time out after this interval
     ROUTE_TTL = 15
 
@@ -43,9 +42,9 @@ class DVRouter(DVRouterBase):
         DO NOT remove any existing code from this method.
         However, feel free to add to it for memory purposes in the final stage!
         """
-        assert not (
-            self.SPLIT_HORIZON and self.POISON_REVERSE
-        ), "Split horizon and poison reverse can't both be on"
+        assert not (self.SPLIT_HORIZON and self.POISON_REVERSE), (
+            "Split horizon and poison reverse can't both be on"
+        )
 
         self.start_timer()  # Starts signaling the timer at correct rate.
 
@@ -81,7 +80,7 @@ class DVRouter(DVRouterBase):
             dst=host,
             port=port,
             latency=self.ports.get_latency(port),
-            expire_time=FOREVER
+            expire_time=FOREVER,
         )
 
         ##### End Stage 1 #####
@@ -114,7 +113,7 @@ class DVRouter(DVRouterBase):
                             be used in conjunction with handle_link_up.
         :return: nothing.
         """
-        
+
         ##### Begin Stages 3, 6, 7, 8, 10 #####
         for p in self.ports.get_all_ports():
             for dst, entry in self.table.items():
@@ -129,7 +128,6 @@ class DVRouter(DVRouterBase):
 
         ##### Begin Stages 5, 9 #####
 
-
         ##### End Stages 5, 9 #####
 
     def handle_route_advertisement(self, route_dst, route_latency, port):
@@ -141,9 +139,23 @@ class DVRouter(DVRouterBase):
         :param port: the port that the advertisement arrived on.
         :return: nothing.
         """
-        
-        ##### Begin Stages 4, 10 #####
 
+        ##### Begin Stages 4, 10 #####
+        neighbor_latency = self.ports.get_latency(port)
+
+        advertised_route = TableEntry(
+                dst=route_dst,
+                port=port,
+                latency=neighbor_latency + route_latency,
+                expire_time= api.current_time() + self.ROUTE_TTL,
+            )
+        cur_route = self.table.get(route_dst, None)
+
+        if cur_route is None or cur_route.port == port:
+            self.table[route_dst] =  advertised_route
+
+        elif cur_route.latency > advertised_route.latency:
+            self.table[route_dst] =  advertised_route
         ##### End Stages 4, 10 #####
 
     def handle_link_up(self, port, latency):
