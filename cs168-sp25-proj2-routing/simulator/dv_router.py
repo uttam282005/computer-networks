@@ -5,6 +5,7 @@ Based on skeleton code by:
   MurphyMc, zhangwen0411, lab352
 """
 
+from os import eventfd_read
 import sim.api as api
 from cs168.dv import (
     RoutePacket,
@@ -127,7 +128,17 @@ class DVRouter(DVRouterBase):
         """
 
         ##### Begin Stages 5, 9 #####
+        expired_routes = []
+        for h, entry in self.table.items():
+            expire_time = entry.expire_time
+            if expire_time == FOREVER:
+                continue
 
+            if expire_time <= api.current_time():
+                expired_routes.append(h)
+
+        for h in expired_routes:
+            self.table.pop(h)
         ##### End Stages 5, 9 #####
 
     def handle_route_advertisement(self, route_dst, route_latency, port):
