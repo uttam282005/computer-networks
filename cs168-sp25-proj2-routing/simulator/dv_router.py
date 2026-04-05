@@ -121,7 +121,9 @@ class DVRouter(DVRouterBase):
                 if entry.port == p:
                     if self.POISON_REVERSE:
                         self.send_route(dst=dst, port=p, latency=INFINITY)
-                    continue
+                        continue
+                    if self.SPLIT_HORIZON:
+                        continue
 
                 self.send_route(dst=dst, port=p, latency=entry.latency)
 
@@ -163,7 +165,7 @@ class DVRouter(DVRouterBase):
         advertised_route = TableEntry(
                 dst=route_dst,
                 port=port,
-                latency=neighbor_latency + route_latency,
+                latency=min(neighbor_latency+route_latency, INFINITY),
                 expire_time= api.current_time() + self.ROUTE_TTL,
             )
         cur_route = self.table.get(route_dst, None)
