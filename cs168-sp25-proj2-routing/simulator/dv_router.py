@@ -29,7 +29,7 @@ class DVRouter(DVRouterBase):
     # -----------------------------------------------
 
     # Determines if you send poison for expired routes
-    POISON_EXPIRED = False
+    POISON_EXPIRED = True 
 
     # Determines if you send updates when a link comes up
     SEND_ON_LINK_UP = False
@@ -146,7 +146,15 @@ class DVRouter(DVRouterBase):
                 expired_routes.append(h)
 
         for h in expired_routes:
-            self.table.pop(h)
+            if self.POISON_EXPIRED:
+                self.table[h] = TableEntry(
+                    dst=self.table[h].dst,
+                    latency=INFINITY,
+                    expire_time=api.current_time() + self.ROUTE_TTL,
+                    port=self.table[h].port
+                )
+            else:
+                self.table.pop(h)
         ##### End Stages 5, 9 #####
 
     def handle_route_advertisement(self, route_dst, route_latency, port):
