@@ -5,6 +5,7 @@ Based on skeleton code by:
   MurphyMc, zhangwen0411, lab352
 """
 
+from collections import defaultdict
 from os import eventfd_read
 import sim.api as api
 from cs168.dv import (
@@ -24,12 +25,12 @@ class DVRouter(DVRouterBase):
 
     # -----------------------------------------------
     # At most one of these should ever be on at once
-    SPLIT_HORIZON = False 
-    POISON_REVERSE = True 
+    SPLIT_HORIZON = False
+    POISON_REVERSE = True
     # -----------------------------------------------
 
     # Determines if you send poison for expired routes
-    POISON_EXPIRED = True 
+    POISON_EXPIRED = True
 
     # Determines if you send updates when a link comes up
     SEND_ON_LINK_UP = False
@@ -56,6 +57,7 @@ class DVRouter(DVRouterBase):
         # This is the table that contains all current routes
         self.table = Table()
         self.table.owner = self
+        self.history = defaultdict(dict) 
 
         ##### Begin Stage 10A #####
 
@@ -103,6 +105,16 @@ class DVRouter(DVRouterBase):
             self.send(packet=packet, port=next_hop.port)
         ##### End Stage 2 #####
 
+    def get_advertized_latency(self, port, entry):
+        if port == entry.port:
+            if self.POISON_REVERSE:
+                return INFINITY
+
+            if self.SPLIT_HORIZON:
+                return None
+
+        return entry.latency
+
     def send_routes(self, force=False, single_port=None):
         """
         Send route advertisements for all routes in the table.
@@ -118,14 +130,17 @@ class DVRouter(DVRouterBase):
         ##### Begin Stages 3, 6, 7, 8, 10 #####
         for p in self.ports.get_all_ports():
             for dst, entry in self.table.items():
-                if entry.port == p:
-                    if self.POISON_REVERSE:
-                        self.send_route(dst=dst, port=p, latency=INFINITY)
-                        continue
-                    if self.SPLIT_HORIZON:
-                        continue
 
-                self.send_route(dst=dst, port=p, latency=entry.latency)
+                adv_latency = self.get_advertized_latency(p, entry)
+                if adv_latency is None:
+                    continue
+
+                if force:
+                    self.send_route(dst=dst, port=p, latency=adv_latency)
+
+                elif self.should_advertize(p, dst, adv_latency):
+                    self.history[p][dst] = adv_latency
+                    self.send_route(dst=dst, port=p, latency=adv_latency)
 
         ##### End Stages 3, 6, 7, 8, 10 #####
 
@@ -137,8 +152,11 @@ class DVRouter(DVRouterBase):
 
         ##### Begin Stages 5, 9 #####
         expired_routes = []
+        changed = False
+
         for h, entry in self.table.items():
             expire_time = entry.expire_time
+
             if expire_time == FOREVER:
                 continue
 
@@ -153,6 +171,7 @@ class DVRouter(DVRouterBase):
                     expire_time=api.current_time() + self.ROUTE_TTL,
                     port=self.table[h].port
                 )
+
             else:
                 self.table.pop(h)
         ##### End Stages 5, 9 #####
@@ -180,9 +199,11 @@ class DVRouter(DVRouterBase):
 
         if cur_route is None or cur_route.port == port:
             self.table[route_dst] =  advertised_route
+            self.send_routes(force=False)
 
         elif cur_route.latency > advertised_route.latency:
             self.table[route_dst] =  advertised_route
+            self.send_routes(force=False)
         ##### End Stages 4, 10 #####
 
     def handle_link_up(self, port, latency):
@@ -213,3 +234,12 @@ class DVRouter(DVRouterBase):
         ##### End Stage 10B #####
 
     # Feel free to add any helper methods!
+    def should_advertize(self, port, dst, adv_latency):
+        prev_latency = self.history[port].get(dst)
+        if prev_latency is None:
+            return True
+
+        if prev_latency != adv_latency:
+            return True
+
+        return False
