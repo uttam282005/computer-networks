@@ -152,7 +152,6 @@ class DVRouter(DVRouterBase):
 
         ##### Begin Stages 5, 9 #####
         expired_routes = []
-        changed = False
 
         for h, entry in self.table.items():
             expire_time = entry.expire_time
