@@ -128,6 +128,15 @@ class DVRouter(DVRouterBase):
         """
 
         ##### Begin Stages 3, 6, 7, 8, 10 #####
+        if single_port:
+            for dst, entry in self.table.items():
+                adv_latency = self.get_advertized_latency(single_port, entry)
+                if adv_latency is not None:
+                    if self.should_advertize(single_port, dst, adv_latency):
+                        self.history[single_port][dst] = adv_latency
+                        self.send_route(single_port, dst, adv_latency)
+            return
+
         for p in self.ports.get_all_ports():
             for dst, entry in self.table.items():
 
@@ -216,7 +225,8 @@ class DVRouter(DVRouterBase):
         self.ports.add_port(port, latency)
 
         ##### Begin Stage 10B #####
-
+        if self.SEND_ON_LINK_UP:
+            self.send_routes(single_port=port)
         ##### End Stage 10B #####
 
     def handle_link_down(self, port):
@@ -229,7 +239,22 @@ class DVRouter(DVRouterBase):
         self.ports.remove_port(port)
 
         ##### Begin Stage 10B #####
+        down_links = []
+        for dst, entry in self.table.items():
+            if entry.port == port:
+                down_links.append(dst)
 
+        for dst in down_links:
+            if self.POISON_ON_LINK_DOWN:
+                self.table[dst] = TableEntry(
+                    dst=dst,
+                    latency=INFINITY,
+                    port=port,
+                    expire_time=api.current_time() + self.ROUTE_TTL
+                )
+                self.send_routes()
+            else:
+                self.table.pop(dst)
         ##### End Stage 10B #####
 
     # Feel free to add any helper methods!
