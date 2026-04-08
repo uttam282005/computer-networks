@@ -246,12 +246,7 @@ class DVRouter(DVRouterBase):
 
         for dst in down_links:
             if self.POISON_ON_LINK_DOWN:
-                self.table[dst] = TableEntry(
-                    dst=dst,
-                    latency=INFINITY,
-                    port=port,
-                    expire_time=api.current_time() + self.ROUTE_TTL
-                )
+                self.poision_route(dst, port)
                 self.send_routes()
             else:
                 self.table.pop(dst)
@@ -267,3 +262,11 @@ class DVRouter(DVRouterBase):
             return True
 
         return False
+
+    def poision_route(self, dst, port):
+        self.table[dst] = TableEntry(
+            dst=dst,
+            latency=INFINITY,
+            port = port,
+            expire_time = api.current_time() + self.ROUTE_TTL
+        )
